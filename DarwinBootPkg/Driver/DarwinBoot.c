@@ -3,6 +3,7 @@
 #include <Guid/FileInfo.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -16,6 +17,18 @@
 #include "BootVideo.h"
 #include "PackedRamdisk.h"
 #include "WindowSize.h"
+
+STATIC UINT64 ProbeRead (UINT64 Address) {
+  WriteBackInvalidateDataCacheRange ((VOID *)(UINTN)Address, sizeof (UINT64));
+  return *(volatile UINT64 *)(UINTN)Address;
+}
+STATIC VOID ProbeWrite (UINT64 Address, UINT64 Value) {
+  *(volatile UINT64 *)(UINTN)Address = Value;
+  WriteBackInvalidateDataCacheRange ((VOID *)(UINTN)Address, sizeof (UINT64));
+}
+#define DARWIN_PROBE_READ(Address) ProbeRead (Address)
+#define DARWIN_PROBE_WRITE(Address, Value) ProbeWrite (Address, Value)
+#include "WindowProbe.h"
 
 #define WINDOW_SIZE  SIZE_256MB
 #define BLOCK_SIZE   SIZE_2MB
@@ -601,6 +614,29 @@ Boot (
   if (EFI_ERROR (Status)) { goto Fail; }
   Status = AllocateWindow (&Kernel, WindowSize, &Address);
   if (EFI_ERROR (Status)) { goto Fail; }
+  // Requests above the old 8 GiB bound always pass a sparse memory check before
+  // any kernel data is placed in the allocation. A mismatch refuses the boot.
+  if (WindowSize > 0x200000000ULL) {
+    unsigned long long *Saved;
+    unsigned long long Failed = 0;
+    CHAR16 Line[96];
+    Saved = AllocatePool ((UINTN)(WindowSize / DARWIN_PROBE_STEP + 1) * sizeof (*Saved));
+    if (Saved == NULL) { Status = EFI_OUT_OF_RESOURCES; goto Fail; }
+    UnicodeSPrint (Line, sizeof (Line), L"MEM TEST PA %lx SIZE %lx", Address, WindowSize);
+    DiagDraw (Line, 0);
+    if (!DarwinWindowProbe (Address, WindowSize, Saved, &Failed)) {
+      FreePool (Saved);
+      UnicodeSPrint (Line, sizeof (Line), L"MEM FAIL PA %lx AT %lx", Address, (UINT64)Failed);
+      DiagDraw (Line, 1);
+      Status = EFI_DEVICE_ERROR;
+      goto Fail;
+    }
+    FreePool (Saved);
+    UnicodeSPrint (Line, sizeof (Line), L"MEM PASS PA %lx SIZE %lx", Address, WindowSize);
+    DiagDraw (Line, 1);
+    Print (L"DARWINBOOT: sparse memory check PASS pa=0x%lx size=0x%lx samples=%lu\n",
+           Address, WindowSize, WindowSize / DARWIN_PROBE_STEP + 1);
+  }
   ArgsAddress = ALIGN_VALUE (Address + Kernel.End - Kernel.Base, SIZE_16KB);
   TreeAddress = ArgsAddress + EFI_PAGE_SIZE;
   RamdiskAddress = ALIGN_VALUE (TreeAddress + TreeSize, EFI_PAGE_SIZE);

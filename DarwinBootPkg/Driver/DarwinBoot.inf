@@ -13,6 +13,8 @@
   BootArgs.h
   BootVideo.h
   DiagFont.h
+  WindowSize.h
+  WindowProbe.h
   Entry.S
 
 [Packages]
@@ -22,6 +24,7 @@
 [LibraryClasses]
   BaseLib
   BaseMemoryLib
+  CacheMaintenanceLib
   DebugLib
   MemoryAllocationLib
   PrintLib

@@ -82,7 +82,7 @@ def main():
             'unavailable-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x40000000))],
             'small-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0))],
             'unaligned-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x10001000))],
-            'large-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x200200000))],
+            'large-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x400200000))],
             'duplicate-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x20000000))] * 2,
             'misplaced-memory-window': [('darwinboot-memory-size', struct.pack('<Q', 0x20000000))]}.items():
         extra_trees[name] = (node('device-tree', properties, [node('chosen')]) if name == 'misplaced-memory-window'
